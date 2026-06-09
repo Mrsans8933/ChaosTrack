@@ -18,7 +18,7 @@ except FileNotFoundError:
 pygame.mixer.init()
 
 print("Плеер запущен")
-
+max_bar_size = 40
 try:
     while True:
         time.sleep(2)
@@ -35,7 +35,9 @@ try:
         pygame.mixer.music.play()
 
         while pygame.mixer.music.get_busy():
-            print(f"\rИграет: {track} | {timer // 60:02d}:{timer % 60:02d} | {minutes:02d}:{seconds:02d} | ", end="")
+            percent = timer / duration
+            bars_count = int(percent * max_bar_size)
+            print(f"\r Играет: {track} | {timer // 60:02d}:{timer % 60:02d}/{minutes:02d}:{seconds:02d} | {'█' * bars_count}{'░' * (max_bar_size - bars_count)} |", end="")
             time.sleep(1)
             timer += 1
 
@@ -43,4 +45,4 @@ try:
 except KeyboardInterrupt:
     print("\nПлеер остановлен.")
 except IndexError:
-    print(f"Папка {mus_dir} пуста, добавьте .mp3 файлы") fdfd
+    print(f"Папка {mus_dir} пуста, добавьте .mp3 файлы")
