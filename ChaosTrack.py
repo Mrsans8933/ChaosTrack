@@ -11,6 +11,9 @@ try:
         print(f"Файлов .mp3 нету в папке {mus_dir}")
 except FileNotFoundError:
     os.mkdir(mus_dir)
+    music_files = [f for f in os.listdir(mus_dir) if f.endswith(".mp3")]
+    if not music_files:
+        print(f"Файлов .mp3 нету в папке {mus_dir}")
 
 pygame.mixer.init()
 
@@ -40,4 +43,4 @@ try:
 except KeyboardInterrupt:
     print("\nПлеер остановлен.")
 except IndexError:
-    print(f"Папка {mus_dir} пуста, добавьте .mp3 файлы")
+    print(f"Папка {mus_dir} пуста, добавьте .mp3 файлы") 
