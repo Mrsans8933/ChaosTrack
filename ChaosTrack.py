@@ -2,9 +2,18 @@ import pygame
 import random
 import os
 import time
+import shutil
 from mutagen.mp3 import MP3
 
+while True:
+    terminal_width = shutil.get_terminal_size().columns
+    if terminal_width <= 85:
+        print("⚠️ Внимание окно терминала слишком маленькое для корректной работы программы рекомендуется разширить размер окна терминала.\n Увеличте окно ⚠️")
+        input("Увеличте окно и нажмите Enter")
+    else:
+        break
 mus_dir = "music"
+
 try:
     music_files = [f for f in os.listdir(mus_dir) if f.endswith(".mp3")]
     if not music_files:
@@ -16,9 +25,9 @@ except FileNotFoundError:
         print(f"Файлов .mp3 нету в папке {mus_dir}")
 
 pygame.mixer.init()
-
+max_bar_size = 30
 print("Плеер запущен")
-max_bar_size = 40
+
 try:
     while True:
         time.sleep(2)
@@ -37,7 +46,8 @@ try:
         while pygame.mixer.music.get_busy():
             percent = timer / duration
             bars_count = int(percent * max_bar_size)
-            print(f"\r Играет: {track} | {timer // 60:02d}:{timer % 60:02d}/{minutes:02d}:{seconds:02d} | {'█' * bars_count}{'░' * (max_bar_size - bars_count)} |", end="")
+            
+            print(f"\rИграет: {track} | {timer // 60:02d}:{timer % 60:02d}/{minutes:02d}:{seconds:02d} | {'█' * bars_count}{'░' * (max_bar_size - bars_count)} |", end="")
             time.sleep(1)
             timer += 1
 
