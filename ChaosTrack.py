@@ -6,7 +6,7 @@ from mutagen.mp3 import MP3
 
 mus_dir = "music"
 try:
-    music_files = [f for f in os.listdir(mus_dir) if f.endswith(".mp3")]
+    music_files = [f for f in os.listdir(mus_dir) if f.endswith(".mp3") or f.endswith(".wav")]
     if not music_files:
         print(f"Файлов .mp3 нету в папке {mus_dir}")
 except FileNotFoundError:
@@ -41,3 +41,4 @@ except KeyboardInterrupt:
     print("\nПлеер остановлен.")
 except IndexError:
     print(f"Папка {mus_dir} пуста, добавьте .mp3 файлы")
+    
