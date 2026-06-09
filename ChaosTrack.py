@@ -43,4 +43,4 @@ try:
 except KeyboardInterrupt:
     print("\nПлеер остановлен.")
 except IndexError:
-    print(f"Папка {mus_dir} пуста, добавьте .mp3 файлы") 
+    print(f"Папка {mus_dir} пуста, добавьте .mp3 файлы") fdfd
