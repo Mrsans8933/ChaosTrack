@@ -1,9 +1,6 @@
 music/
 *.mp3
-<<<<<<< HEAD
 venv/
 __pycache__/
 *.pyc
-=======
 venv
->>>>>>> 5b0298ae8e71f1cf633ce1c5c259756e5bc0cacc
