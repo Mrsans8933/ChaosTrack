@@ -47,7 +47,7 @@ python ChaosTrack.py
 # 📁 Структура проекта
 ```
 ChaosTrack/
-├── music/               # папка с твоими MP3/WAV файлами
+├─
 ├── ChaosTrack.py              # основной скрипт
 ├── requirements.txt     # зависимости
 ├── README.md            # этот файл
