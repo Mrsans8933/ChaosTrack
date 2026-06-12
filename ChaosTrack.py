@@ -3,6 +3,8 @@ import random
 import os
 import time
 import shutil
+import threading
+import keyboard
 from mutagen.mp3 import MP3
 
 
@@ -27,11 +29,10 @@ if not music_files:
     print(f"В папке '{mus_dir}' нет .mp3 файлов")
     exit()
 
-
 while True:
     terminal_width = shutil.get_terminal_size().columns
-    if terminal_width <= 85:
-        print("⚠️ Окно терминала слишком маленькое (нужно ≥86).")
+    if terminal_width <= 105:
+        print("⚠️ Окно терминала слишком маленькое (нужно 105 символов по ширене увеличте окно) Для перепроверки нажмите Enter.")
         if input("Введите 'q' чтобы продолжить с риском ошибок: ").strip().lower() == "q":
             break
     else:
@@ -40,6 +41,33 @@ while True:
 pygame.mixer.init()
 max_bar_size = 30
 print("Плеер запущен")
+
+volume = 100
+
+def volume_control():
+    global volume
+    last_up = False
+    last_down = False
+    while True:
+        up = keyboard.is_pressed("up")
+        down = keyboard.is_pressed("down")
+
+        if up and not last_up:
+            volume = min(100, volume + 5)
+            pygame.mixer.music.set_volume(volume / 100)
+
+        if down and not last_down:
+            volume = max(0, volume - 5)
+            pygame.mixer.music.set_volume(volume / 100)
+
+        last_up = up
+        last_down = down
+        time.sleep(0.05)
+
+
+volume_thread = threading.Thread(target=volume_control, daemon=True)
+volume_thread.start()
+pygame.mixer.music.set_volume(1)
 
 try:
     while True:
@@ -59,9 +87,10 @@ try:
         while pygame.mixer.music.get_busy():
             percent = timer / duration
             bars_count = int(percent * max_bar_size)
+            vol = pygame.mixer.music.get_volume()
 
             print(
-                f"\r🎵 {track[:35]:35} | {timer // 60:02d}:{timer % 60:02d}/{minutes:02d}:{seconds:02d} | {'█' * bars_count}{'░' * (max_bar_size - bars_count)} |",
+                f"\r🎵 {track[:35]:35} | {timer // 60:02d}:{timer % 60:02d}/{minutes:02d}:{seconds:02d} | {'█' * bars_count}{'░' * (max_bar_size - bars_count)} | 🔊 Громкость:{volume}% | ",
                 end=""
             )
             time.sleep(1)
