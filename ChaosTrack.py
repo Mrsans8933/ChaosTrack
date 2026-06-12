@@ -64,7 +64,6 @@ def volume_control():
         last_down = down
         time.sleep(0.05)
 
-
 volume_thread = threading.Thread(target=volume_control, daemon=True)
 volume_thread.start()
 pygame.mixer.music.set_volume(1)
