@@ -43,6 +43,22 @@ max_bar_size = 30
 print("Плеер запущен")
 
 volume = 100
+is_paused = False
+
+def pause_control():
+    global is_paused
+    last_pause = False
+    while True:
+        pause_key = keyboard.is_pressed("right_shift")
+        if pause_key and not last_p:
+            if is_paused:
+                pygame.mixer.music.unpause()
+                is_paused = False
+            else:
+                pygame.mixer.music.pause()
+                is_paused = True
+        last_p = p
+        time.sleep(0.05)
 
 def volume_control():
     global volume
@@ -66,7 +82,11 @@ def volume_control():
 
 
 volume_thread = threading.Thread(target=volume_control, daemon=True)
+pause_thread = threading.Thread(target=pause_control, daemon=True)
+
 volume_thread.start()
+pause_thread.start()
+
 pygame.mixer.music.set_volume(1)
 
 try:
@@ -85,7 +105,11 @@ try:
         pygame.mixer.music.play()
         last_time = time.time()
 
-        while pygame.mixer.music.get_busy():
+        while pygame.mixer.music.get_busy() or is_paused:
+            if is_paused:
+                time.sleep(0.05)
+                continue
+
             percent = timer / duration
             bars_count = int(percent * max_bar_size)
 
@@ -99,5 +123,6 @@ try:
                 last_time = time.time()
 
             time.sleep(0.05)
+
 except KeyboardInterrupt:
     print("\nПлеер остановлен.")
