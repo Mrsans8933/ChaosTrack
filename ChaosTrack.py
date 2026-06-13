@@ -64,6 +64,7 @@ def volume_control():
         last_down = down
         time.sleep(0.05)
 
+
 volume_thread = threading.Thread(target=volume_control, daemon=True)
 volume_thread.start()
 pygame.mixer.music.set_volume(1)
@@ -82,18 +83,21 @@ try:
 
         pygame.mixer.music.load(full_path)
         pygame.mixer.music.play()
+        last_time = time.time()
 
         while pygame.mixer.music.get_busy():
             percent = timer / duration
             bars_count = int(percent * max_bar_size)
-            vol = pygame.mixer.music.get_volume()
 
             print(
-                f"\r🎵 {track[:35]:35} | {timer // 60:02d}:{timer % 60:02d}/{minutes:02d}:{seconds:02d} | {'█' * bars_count}{'░' * (max_bar_size - bars_count)} | 🔊 Громкость:{volume}% | ",
+                f"\r🎵 {track[:35]:35} | {timer // 60:02d}:{timer % 60:02d}/{minutes:02d}:{seconds:02d} | {'█' * bars_count}{'░' * (max_bar_size - bars_count)} | 🔊 Громкость:{volume}%",
                 end=""
             )
-            time.sleep(1)
-            timer += 1
 
+            if time.time() - last_time >= 1:
+                timer += 1
+                last_time = time.time()
+
+            time.sleep(0.05)
 except KeyboardInterrupt:
     print("\nПлеер остановлен.")
