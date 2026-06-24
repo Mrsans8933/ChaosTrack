@@ -1,230 +1,365 @@
-# ========== Импорт ==========
-import sys
-import json
-import pygame
-import random
-import os
-import time
-import shutil
-import threading
-import keyboard
-from mutagen.mp3 import MP3
+# P.S коментарии написаны ИИ
+# ============================================================
+# 0. ВСЁ, ЧТО НУЖНО ДЛЯ РАБОТЫ (подключаем библиотеки)
+# ============================================================
+import json  # чтобы читать и сохранять настройки
+import customtkinter as ctk  # красивые окошки
+import os  # проверка, есть ли папка
+import threading  # чтобы музыка не тормозила интерфейс
+import time  # для таймера
+import pygame  # для звука
+import random  # для рандома
+from mutagen.mp3 import MP3  # длительность трека
+from mutagen.id3 import ID3, APIC  # обложка
+from PIL import Image, ImageTk  # картинки
+import io  # работа с картинками в памяти
+from tkinter import filedialog  # чтобы открыть проводник
 
-# ========== Глобальные переменные ==========
-config = {}
-volume = 50
-is_paused = False
-music_files = []
-mus_dir = ""
-max_bar_size = 30
+# ============================================================
+# 1. ПЕРЕМЕННЫЕ, КОТОРЫЕ ЖИВУТ ВСЮ ПРОГРАММУ
+# ============================================================
+config = {}  # сюда сохраним путь к музыке и другие настройки
+is_paused = False  # играет или стоит? (пауза)
+current_track = None  # имя трека, который играет сейчас
+current_duration = 0  # сколько длится этот трек (в секундах)
+cover_cache = {}  # сюда складываем обложки, чтобы не грузить их заново
 
-def get_base_dir():
-    if getattr(sys, 'frozen', False):
-        return os.path.dirname(sys.executable)
-    else:
-        return os.path.dirname(os.path.abspath(__file__))
-
-script_dir = get_base_dir()
-# ========== Функции ==========
-
+# ============================================================
+# 2. ЗАГРУЗКА НАСТРОЕК (если есть)
+# ============================================================
 def load_config():
-    global config, volume, mus_dir
+    global config
     try:
-        with open(os.path.join(script_dir, "config.json"), "r", encoding="utf-8") as f:
+        with open("config.json", "r", encoding="utf-8") as f:
             config = json.load(f)
-        mus_dir = config.get("music_path")
-        if not mus_dir:
-            raise KeyError("music_path not found")
-    except (FileNotFoundError, KeyError):
+        return True  # всё хорошо, настройки есть
+    except:
+        return False  # файла нет — будем создавать
+
+# ============================================================
+# 3. ОКНО ДЛЯ ПЕРВОЙ НАСТРОЙКИ
+# ============================================================
+def show_config_window():
+    global config
+    config_app = ctk.CTk()
+    config_app.geometry("500x350")
+    config_app.resizable(False, False)
+    ctk.set_default_color_theme("blue")
+
+    # выбираем папку через проводник
+    def choose_folder():
+        folder = filedialog.askdirectory()
+        if folder:
+            path_entry.delete(0, ctk.END)
+            path_entry.insert(0, folder)
+
+    # сохраняем путь в конфиг
+    def save_text():
+        path = path_entry.get().strip()
+        if not os.path.exists(path):
+            error_text = ctk.CTkLabel(config_app, text="❌ Папка не найдена", text_color="red")
+            error_text.place(relx=0.5, y=220, anchor="center")
+        else:
+            config["path"] = path.replace("\\", "/")
+            with open("config.json", "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=4, ensure_ascii=False)
+            config_app.destroy()
+
+    # рисуем окошко
+    info_text = ctk.CTkLabel(config_app, text="Введите путь к папке с музыкой", font=("Arial", 23))
+    info_text.place(relx=0.5, y=40, anchor="center")
+
+    path_entry = ctk.CTkEntry(config_app, placeholder_text="Введите путь к папке", width=300)
+    path_entry.place(relx=0.5, y=120, anchor="center")
+
+    folder_btn = ctk.CTkButton(config_app, text="📂 Выбрать папку", command=choose_folder, width=150)
+    folder_btn.place(relx=0.5, y=180, anchor="center")
+
+    btn = ctk.CTkButton(config_app, text="✅ Сохранить", command=save_text, width=150)
+    btn.place(relx=0.5, y=250, anchor="center")
+
+    config_app.mainloop()
+
+# ============================================================
+# 4. ЗАГРУЗАЕМ МУЗЫКУ И ГОТОВИМ ПЛЕЕР
+# ============================================================
+if not load_config():  # если конфига нет — показываем окошко
+    show_config_window()
+
+print(f"Конфиг загружен: {''.join(config)}, запускаем плеер...")
+music_files = [f for f in os.listdir(config.get("path")) if f.endswith(".mp3")]
+pygame.mixer.init()
+
+# ============================================================
+# 5. ВСЁ ПРО ОБЛОЖКИ (загрузка, кеш, отображение)
+# ============================================================
+def get_cover_data(file_path):
+    """достаём картинку из mp3 (если есть)"""
+    try:
+        tags = ID3(file_path)
+        for tag in tags.values():
+            if isinstance(tag, APIC):
+                return tag.data
+    except:
+        pass
+    return None
+
+def load_cover_to_photo(cover_data, size=(220, 220)):
+    """превращаем байты в картинку для интерфейса"""
+    if not cover_data:
+        return None
+    try:
+        img = Image.open(io.BytesIO(cover_data))
+        img = img.resize(size, Image.Resampling.LANCZOS)
+        return ImageTk.PhotoImage(img)
+    except:
+        return None
+
+def update_cover(file_path, label):
+    """показываем обложку на виджете (с кешем)"""
+    global cover_cache
+    if file_path in cover_cache:
+        photo = cover_cache[file_path]
+        label.configure(image=photo)
+        label.image = photo
+        return
+
+    cover_data = get_cover_data(file_path)
+    photo = load_cover_to_photo(cover_data)
+    if photo:
+        cover_cache[file_path] = photo
+        label.configure(image=photo)
+        label.image = photo
+    else:
+        label.configure(image=None, text="🎵 Нет обложки")
+
+# ============================================================
+# 6. ПОТОК, КОТОРЫЙ КРУТИТ МУЗЫКУ (бесконечно)
+# ============================================================
+def play_music():
+    global is_paused, current_track, current_duration
+
+    while True:
+        if not music_files:
+            time.sleep(1)
+            continue
+
+        # случайный трек
+        current_track = random.choice(music_files)
+        full_path = os.path.join(config.get("path"), current_track)
+        current_duration = MP3(full_path).info.length
+
+        # обновляем заголовок окна
+        title.configure(text=f"🎵 {current_track[:30]}")
+
+        # показываем обложку
+        update_cover(full_path, cover_label)
+
+        # загружаем и играем
+        pygame.mixer.music.load(full_path)
+        pygame.mixer.music.play()
+
+        timer = 0
+        last_time = time.time()
+
+        # пока трек не закончился
         while True:
-            print("Здравствуйте, давайте настроим управление под вас")
-            path = input("Введите путь к папке с музыкой: ").strip()
-            if not os.path.isdir(path):
-                input(f"'{path}' не найден. Проверьте существование этого пути.\nНажмите Enter для перезапуска")
-                os.system("clear")
+            # если трек кончился и не на паузе — выходим
+            if not pygame.mixer.music.get_busy() and not is_paused:
+                break
+
+            # если пауза — ждём
+            if is_paused:
+                time.sleep(0.1)
                 continue
 
-            volume_up_key = input(
-                "Введите клавишу для увеличения громкости звука или название и нажмите Enter\n(По умолчанию: 'up'): "
-            )
-            if not volume_up_key:
-                volume_up_key = "up"
+            # обновляем прогресс каждую секунду
+            if time.time() - last_time >= 1:
+                timer += 1
+                last_time = time.time()
 
-            volume_down_key = input(
-                "Введите клавишу для понижения громкости звука или название клавиши и нажмите Enter\n(По умолчанию: 'down'): "
-            )
-            if not volume_down_key:
-                volume_down_key = "down"
+                if current_duration > 0:
+                    progress.set(timer / current_duration)
+                    time_left.configure(text=f"{int(timer // 60):02d}:{int(timer % 60):02d}")
+                    time_right.configure(
+                        text=f"{int(current_duration // 60):02d}:{int(current_duration % 60):02d}"
+                    )
 
-            pause_key = input(
-                "Введите клавишу для паузы или название клавиши и нажмите Enter\n(По умолчанию: 'right_shift'): "
-            )
-            if not pause_key:
-                pause_key = "right_shift"
+                # если время вышло — выходим
+                if timer >= current_duration:
+                    break
 
-            print(f"""
-              Ваш конфиг:
-              Путь к музыке: {path}
-              Повышение громкости: {volume_up_key}
-              Понижение громкости: {volume_down_key}
-              Пауза: {pause_key}
-              """)
+            time.sleep(0.05)
 
-            choose = input("Вас устраивает такой конфиг? [Y/N] ").lower()
-            if choose == "y" or not choose:
-                config = {
-                    "music_path": path,
-                    "volume_up_key": volume_up_key,
-                    "volume_down_key": volume_down_key,
-                    "pause_key": pause_key,
-                    "volume": 50
-                }
-                print(f"📁 Сохраняю конфиг в: {os.path.join(script_dir, 'config.json')}")
-                break
+# ============================================================
+# 7. ГЛАВНОЕ ОКНО (GUI)
+# ============================================================
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
 
-        config_path = os.path.join(script_dir, "config.json")
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=4, ensure_ascii=False)
+app = ctk.CTk()
+app.title("ChaosTrack")
+app.geometry("800x500")
+app.resizable(False, False)
 
-    mus_dir = config.get("music_path")
-    volume = config.get("volume", 50)
+BG = "#262626"
+FG = "white"
+app.configure(fg_color=BG)
 
-def init_music_dir():
-    global music_files
-    if not os.path.isdir(mus_dir):
-        print(f"❌ Папка '{mus_dir}' не существует. Проверьте путь в config.json")
-        exit()
+# ============================================================
+# 8. РИСУЕМ КНОПКИ, ПОЛОСКИ, ВРЕМЯ
+# ============================================================
 
-    music_files = [f for f in os.listdir(mus_dir) if f.endswith(".mp3")]
+# заголовок
+title = ctk.CTkLabel(
+    app,
+    text="ChaosTrack",
+    font=("Arial", 28, "bold"),
+    text_color=FG
+)
+title.place(relx=0.5, y=40, anchor="center")
 
-    if not music_files:
-        print(f"В папке '{mus_dir}' нет .mp3 файлов")
-        exit()
+# режим
+mode_label = ctk.CTkLabel(
+    app,
+    text="Режим: Chaos",
+    font=("Arial", 14, "bold"),
+    text_color=FG
+)
+mode_label.place(relx=0.5, y=80, anchor="center")
 
-def check_terminal_width():
-    while True:
-        terminal_width = shutil.get_terminal_size().columns
-        if terminal_width <= 105:
-            print("⚠️ Окно терминала слишком маленькое (нужно 105 символов по ширине. Увеличьте окно)")
-            if input("Введите 'q' чтобы продолжить с риском ошибок: ").strip().lower() == "q":
-                break
-        else:
-            break
+# кнопка настроек
+settings_btn = ctk.CTkButton(
+    app,
+    text="⚙️",
+    width=40,
+    height=40,
+    command=show_config_window,
+    fg_color="transparent",
+    hover_color="#333333",
+    corner_radius=8,
+    text_color=FG
+)
+settings_btn.place(x=740, y=20)
 
-def init_pygame():
-    global max_bar_size
-    pygame.mixer.init()
-    pygame.mixer.music.set_volume(volume / 100)
+# рамка для обложки
+cover_frame = ctk.CTkFrame(
+    app,
+    width=220,
+    height=220,
+    fg_color=BG,
+    border_width=3,
+    border_color=FG,
+    corner_radius=0
+)
+cover_frame.place(relx=0.5, y=250, anchor="center")
 
-    print(f"""
-╔══════════════════════════════════════════════════╗
-║              ChaosTrack v2.0.1                   ║
-║      Случайный аудиоплеер                        ║
-║      Ctrl+C   - выход                            ║
-╚══════════════════════════════════════════════════╝
-""")
-    print("Плеер запущен")
+cover_label = ctk.CTkLabel(
+    cover_frame,
+    text="🎵",
+    font=("Arial", 40),
+    text_color=FG
+)
+cover_label.place(relx=0.5, rely=0.5, anchor="center")
 
-def pause_control():
+# прогресс-бар
+progress = ctk.CTkProgressBar(
+    app,
+    width=400,
+    height=3,
+    progress_color=FG,
+    fg_color="#2a2a2a"
+)
+progress.set(0)
+progress.place(relx=0.5, y=400, anchor="center")
+
+# время слева (сколько прошло)
+time_left = ctk.CTkLabel(
+    app,
+    text="00:00",
+    font=("Arial", 14, "bold"),
+    text_color=FG
+)
+time_left.place(x=180, y=420)
+
+# время справа (сколько всего)
+time_right = ctk.CTkLabel(
+    app,
+    text="00:00",
+    font=("Arial", 14, "bold"),
+    text_color=FG
+)
+time_right.place(x=590, y=420)
+
+# кнопка паузы
+def toggle_play():
     global is_paused
-    last_p = False
-    pause_key = config.get("pause_key", "right_shift")
-    while True:
-        p = keyboard.is_pressed(pause_key)
-        if p and not last_p:
-            if is_paused:
-                pygame.mixer.music.unpause()
-                is_paused = False
-            else:
-                pygame.mixer.music.pause()
-                is_paused = True
-        last_p = p
-        time.sleep(0.05)
+    if is_paused:
+        pygame.mixer.music.unpause()
+        play_btn.configure(text="⏸")
+        is_paused = False
+    else:
+        pygame.mixer.music.pause()
+        play_btn.configure(text="▶")
+        is_paused = True
 
-def volume_control():
-    global volume, config
-    last_up = False
-    last_down = False
-    volume_up_key = config.get("volume_up_key", "up")
-    volume_down_key = config.get("volume_down_key", "down")
+play_btn = ctk.CTkButton(
+    app,
+    text="⏸",
+    width=70,
+    height=70,
+    fg_color=FG,
+    hover_color="#cccccc",
+    corner_radius=35,
+    font=("Arial", 30),
+    text_color=BG,
+    command=toggle_play
+)
+play_btn.place(relx=0.5, y=460, anchor="center")
 
-    while True:
-        up = keyboard.is_pressed(volume_up_key)
-        down = keyboard.is_pressed(volume_down_key)
+# громкость
+volume_slider = ctk.CTkSlider(
+    app,
+    from_=0,
+    to=100,
+    width=120,
+    height=6,
+    progress_color=FG,
+    fg_color="#2a2a2a",
+    button_color=FG,
+    button_hover_color="#cccccc",
+    button_corner_radius=100
+)
+volume_slider.set(50)
+volume_slider.place(x=620, y=470)
 
-        if up and not last_up:
-            volume = min(100, volume + 5)
-            pygame.mixer.music.set_volume(volume / 100)
-            config["volume"] = volume
-            with open(os.path.join(script_dir, "config.json"), "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=4, ensure_ascii=False)
+def change_volume(value):
+    pygame.mixer.music.set_volume(float(value) / 100)
 
-        if down and not last_down:
-            volume = max(0, volume - 5)
-            pygame.mixer.music.set_volume(volume / 100)
-            config["volume"] = volume
-            with open(os.path.join(script_dir, "config.json"), "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=4, ensure_ascii=False)
+volume_slider.configure(command=change_volume)
 
-        last_up = up
-        last_down = down
-        time.sleep(0.05)
+# иконка громкости
+volume_label = ctk.CTkLabel(
+    app,
+    text="🔊",
+    font=("Arial", 14),
+    text_color=FG
+)
+volume_label.place(x=590, y=458)
 
-def start_threads():
-    pause_thread = threading.Thread(target=pause_control, daemon=True)
-    volume_thread = threading.Thread(target=volume_control, daemon=True)
-    pause_thread.start()
-    volume_thread.start()
+# версия
+version_text = ctk.CTkLabel(
+    app,
+    text="V3.0.0",
+    font=("Arial", 14),
+    text_color=FG
+)
+version_text.place(x=1, y=478)
 
-def play_music():
-    global is_paused
-    try:
-        while True:
-            time.sleep(2)
-            timer = 0
+# ============================================================
+# 9. ЗАПУСК (поток + приложение)
+# ============================================================
+music_thread = threading.Thread(target=play_music, daemon=True)
+music_thread.start()
 
-            track = random.choice(music_files)
-            full_path = os.path.join(mus_dir, track)
-            duration = MP3(full_path).info.length
-
-            minutes = int(duration // 60)
-            seconds = int(duration % 60)
-
-            pygame.mixer.music.load(full_path)
-            pygame.mixer.music.play()
-            last_time = time.time()
-
-            while pygame.mixer.music.get_busy() or is_paused:
-                if is_paused:
-                    time.sleep(0.05)
-                    continue
-
-                percent = timer / duration
-                bars_count = int(percent * max_bar_size)
-
-                print(
-                    f"\r🎵 {track[:35]:35} | {timer // 60:02d}:{timer % 60:02d}/{minutes:02d}:{seconds:02d} | {'█' * bars_count}{'░' * (max_bar_size - bars_count)} | 🔊 Громкость:{volume}% | ",
-                    end=""
-                )
-
-                if time.time() - last_time >= 1:
-                    timer += 1
-                    last_time = time.time()
-
-                time.sleep(0.05)
-
-    except KeyboardInterrupt:
-        print("\nПлеер остановлен.")
-
-# ========== Запуск ==========
-def main():
-    get_base_dir()
-    load_config()
-    init_music_dir()
-    check_terminal_width()
-    init_pygame()
-    start_threads()
-    play_music()
-
-if __name__ == "__main__":
-    main()
+app.mainloop()
